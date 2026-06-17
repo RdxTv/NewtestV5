@@ -38,10 +38,11 @@ async def actors_directory_page(req):
         actors_grid_html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:20px;">'
         for act in all_actors:
             act_id = str(act["_id"])
+            current_ts = int(time.time())
             actors_grid_html += f'''
             <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; transition:0.2s; cursor:pointer;" onclick="window.location.href='/actor/{act_id}'">
                 <div style="position:relative; padding-top:135%; background:var(--bg3); overflow:hidden;">
-                    <img src="/api/actor/photo?id={act_id}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" loading="lazy">
+                    <img src="/api/actor/photo?id={act_id}&t={current_ts}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" loading="lazy">
                 </div>
                 <div style="padding:12px; text-align:center;">
                     <div style="font-size:14px; font-weight:700; color:var(--text); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{html.escape(act.get('name', ''))}</div>
@@ -133,7 +134,7 @@ async def api_create_actor(req):
         return web.HTTPFound(f'/admin/create_actor?err=Server Error: {str(e)}')
 
 # ─────────────────────────────────────────────────────────
-# 🖼️ ZERO-RAM GENERAL PHOTO ENGINE
+# 🖼️ ZERO-RAM GENERAL PHOTO ENGINE (CACHE-CONTROL FIXED)
 # ─────────────────────────────────────────────────────────
 @actor_routes.get('/api/actor/photo')
 async def get_actor_photo(req):
@@ -148,8 +149,16 @@ async def get_actor_photo(req):
         if img_index is not None:
             idx = int(img_index)
             raw_url = doc.get("gallery", [])[idx]
+            headers = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Disposition": 'inline; filename="photo.jpg"'}
         else:
             raw_url = doc.get("photo_url")
+            # ✅ अवतार को बिना ब्राउज़र कैशे के तुरंत रेंडर करने के लिए headers सेट किये गए हैं
+            headers = {
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Content-Disposition": 'inline; filename="avatar.jpg"'
+            }
             
         if not raw_url or not raw_url.startswith("TG_ID:"): return web.Response(status=404)
         tg_id = raw_url.replace("TG_ID:", "")
@@ -161,7 +170,6 @@ async def get_actor_photo(req):
         file_data.close()
         del file_data
         
-        headers = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Disposition": 'inline; filename="photo.jpg"'}
         return web.Response(body=body_bytes, content_type="image/jpeg", headers=headers)
     except Exception: return web.Response(status=500)
     finally: gc.collect()
@@ -214,7 +222,6 @@ async def actor_profile_display(req):
     else:
         gallery_grid_html += '<div class="gallery-grid">'
         for i in range(len(gallery_list)):
-            # ✅ गैलरी इमेज डिलीट और फुल स्क्रीन लाइटबॉक्स ट्रिगर सपोर्ट
             del_btn = f'<button class="gallery-del-btn" onclick="deleteGalleryImage(\'{actor_id}\', {i}, event)">🗑️ Delete</button>' if role == 'admin' else ""
             gallery_grid_html += f'''
             <div class="gallery-item-wrap" onclick="openLightbox('/api/actor/photo?id={actor_id}&gallery_idx={i}')">
@@ -239,6 +246,7 @@ async def actor_profile_display(req):
         
     tags_json_payload = html.escape(json.dumps(tags_list))
     safe_bio = html.escape(actor.get("bio", ""))
+    master_ts = int(time.time())
 
     tab_engine_ui = f'''
     <style>
@@ -249,7 +257,6 @@ async def actor_profile_display(req):
         .actor-panel {{ display: none; }}
         .actor-panel.active {{ display: block !important; }}
         
-        /* ── गैलरी नोड विथ डिलीट ओवरले ── */
         .gallery-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }}
         @media(min-width:600px) {{ .gallery-grid {{ grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }} }}
         .gallery-item-wrap {{ position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); aspect-ratio: 1; cursor: pointer; }}
@@ -258,7 +265,6 @@ async def actor_profile_display(req):
         .gallery-del-btn {{ position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(160,8,8,.85); border: 1px solid var(--accent); color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 10px; font-weight: 700; cursor: pointer; z-index: 5; opacity: 0; transition: opacity 0.15s; }}
         .gallery-item-wrap:hover .gallery-del-btn {{ opacity: 1; }}
         
-        /* ── फुलस्क्रीन लाइटबॉक्स ── */
         .lightbox {{ position: fixed; inset: 0; background: rgba(0,0,0,.92); backdrop-filter: blur(15px); z-index: 99999; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s ease; }}
         .lightbox.open {{ display: flex; opacity: 1; }}
         .lightbox-img {{ max-width: 92%; max-height: 88vh; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.8); transform: scale(.95); transition: transform .2s cubic-bezier(.4,0,.2,1); }}
@@ -266,7 +272,6 @@ async def actor_profile_display(req):
         .lightbox-close {{ position: absolute; top: 20px; right: 25px; background: none; border: none; color: #fff; font-size: 32px; cursor: pointer; opacity: .7; }}
         .lightbox-close:hover {{ opacity: 1; }}
 
-        /* ── डैशबोर्ड की प्रीमियम रिस्पॉन्सिव ग्रिड ── */
         .search-zone-actor {{ padding: 16px 0 0 0; }}
         .search-row1-actor {{ display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }}
         .search-row2-actor {{ display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin-bottom: 16px; }}
@@ -334,7 +339,7 @@ async def actor_profile_display(req):
         
         <div style="display:flex; gap:25px; background:var(--card); border:1px solid var(--border); padding:25px; border-radius:12px; margin-bottom:35px; flex-wrap:wrap;">
             <div style="width:160px; height:220px; background:var(--bg3); border-radius:8px; overflow:hidden; border:1px solid var(--border); flex-shrink:0;">
-                <img id="actorMasterAvatarImage" src="/api/actor/photo?id={actor_id}" style="width:100%; height:100%; object-fit:cover;">
+                <img id="actorMasterAvatarImage" src="/api/actor/photo?id={actor_id}&t={master_ts}" style="width:100%; height:100%; object-fit:cover;">
             </div>
             <div style="flex:1; min-width:300px; display:flex; flex-direction:column; justify-content:center;">
                 <h1 style="font-size:32px; font-weight:900; color:var(--text); margin-bottom:2px;">{html.escape(actor_name)}</h1>
@@ -447,7 +452,6 @@ async def actor_profile_display(req):
     <script>
         var actCurPage = 1, actOffset = 0, actNextOffset = "";
         var actLimit = 21;
-        var actorDefaultName = "{html.escape(actor_name)}";
         var actCol = "all", actMode = "tg";
 
         function closeActorCdds(){{
@@ -495,7 +499,6 @@ async def actor_profile_display(req):
         }}
         document.addEventListener('click', function(){{ closeActorCdds(); }});
 
-        /* ── लाइटबॉक्स इंजन ── */
         function openLightbox(src) {{
             var lb = document.getElementById('actorLightboxModal');
             document.getElementById('lightboxTargetImg').src = src;
@@ -527,7 +530,7 @@ async def actor_profile_display(req):
 
         async function triggerActorSearchAjax() {{
             var typedQ = document.getElementById('actor_movie_q').value.trim();
-            var q = typedQ || actorDefaultName; 
+            var q = typedQ || ""; 
             var grid = document.getElementById('actor_video_results');
             
             grid.className = 'res-grid mode-' + actMode;
@@ -580,7 +583,6 @@ async def actor_profile_display(req):
             }}
         }}
 
-        // ✅ लाइव फोटो रीलोडर: बिना पेज रिफ्रेश किए ब्राउज़र में अवतार तुरंत बदलेगा
         async function updateActorAvatar(actorId) {{
             var fileInput = document.getElementById('avatarUpdateInput');
             if(!fileInput.files || !fileInput.files[0]) return;
@@ -602,7 +604,6 @@ async def actor_profile_display(req):
             }} catch(e) {{ alert("Network update error!"); }}
         }}
 
-        // 🗑️ गैलरी इमेज डिलीट इंजन
         async function deleteGalleryImage(actorId, idx, e) {{
             if(e) {{ e.stopPropagation(); }}
             if(!confirm("Delete this photo from gallery permanently?")) return;
@@ -661,13 +662,24 @@ async def api_actor_search_handler(req):
     actor = await actors.find_one({"_id": ObjectId(actor_id)})
     if not actor: return web.json_response({"results": []})
     
-    search_query = q_custom if q_custom else actor["name"]
     tags_list = actor.get("tags", [])
     
+    # ── नया सर्च लॉजिक इंजन ──
+    if q_custom:
+        search_query = q_custom
+        final_tags = []
+    else:
+        if tags_list:
+            search_query = tags_list[0]
+            final_tags = tags_list
+        else:
+            # अगर सर्च बार भी खाली है और एक्टर के पास कोई टैग भी नहीं है, तो कोई वीडियो शो नहीं होगा
+            return web.json_response({"results": [], "next_offset": ""})
+        
     lim = 21
     
     all_m, next_offset = await get_actor_search_results(
-        search_query, tags_list, max_results=lim, offset=off, collection_type=col
+        search_query, final_tags, max_results=lim, offset=off, collection_type=col
     )
     
     results_list = []
