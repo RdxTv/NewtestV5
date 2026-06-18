@@ -8,7 +8,7 @@ from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from Script import script
-# ✅ FIX: actors कलेक्शन को इम्पोर्ट किया गया
+# ✅ FIX: actors कलेक्शन को इम्पोर्ट किया गया ताकि हम डायरेक्टरी की गिनती कर सकें
 from database.ia_filterdb import db_count_documents, get_file_details, delete_files, actors
 from database.users_chats_db import db
 
@@ -149,7 +149,6 @@ async def stats(_, message):
     msg = await message.reply("🔄 Fetching Advanced Database Metrics...")
     
     try:
-        # 1. Fetching File DB Stats Safely
         try:
             files = await db_count_documents()
             f = files if isinstance(files, dict) else {}
@@ -157,7 +156,6 @@ async def stats(_, message):
             f = {}
             logger.error(f"File Stats Error: {e}")
 
-        # 2. Fetching User DB Stats Safely
         try: users = await db.total_users_count()
         except: users = 0
 
@@ -167,7 +165,7 @@ async def stats(_, message):
         try: premium = await db.premium.count_documents({"status.premium": True})
         except: premium = 0
 
-        # 3. Fetching Universal Directory Stats Safely
+        # 🗂️ Universal Directory Fetch
         try:
             tot_dir = await actors.count_documents({})
             app_dir = await actors.count_documents({"category": "app"})
@@ -177,7 +175,7 @@ async def stats(_, message):
             tot_dir = app_dir = web_dir = act_dir = 0
             logger.error(f"Directory Stats Error: {e}")
 
-        # 4. Rendering the UI
+        # ✅ FIX: 16 Formatting Args Required for STATUS_TXT
         stats_text = script.STATUS_TXT.format(
             users, chats, premium,
             f.get('total', 0),
@@ -196,7 +194,6 @@ async def stats(_, message):
         await msg.edit(stats_text, reply_markup=InlineKeyboardMarkup(buttons))
         
     except Exception as ex:
-        # अगर कोई बड़ा Python एरर आता है, तो बॉट यहीं पर मैसेज एडिट करके एरर दिखा देगा
         await msg.edit(f"❌ **System Error during Stats generation:**\n\n<code>{ex}</code>\n\n_Please check your script.py placeholders._")
 
 
@@ -335,6 +332,7 @@ async def ui_cb(client, query):
                 try: premium = await db.premium.count_documents({"status.premium": True})
                 except: premium = 0
 
+                # 16 Args for STATUS_TXT
                 text = script.STATUS_TXT.format(
                     users, chats, premium,
                     f.get('total',0),
@@ -349,6 +347,7 @@ async def ui_cb(client, query):
                     [InlineKeyboardButton("⬅️ Back Menu", callback_data="back_start")]
                 ]
             else:
+                # 9 Args for USER_STATUS_TXT
                 text = script.USER_STATUS_TXT.format(
                     f.get('total',0), f.get('primary',0), f.get('cloud',0), f.get('archive',0),
                     tot_dir, act_dir, app_dir, web_dir, uptime
